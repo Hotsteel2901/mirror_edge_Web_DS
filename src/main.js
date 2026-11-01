@@ -3,7 +3,7 @@ import { Graphics } from './graphics.js';
 
 import {
   clamp, lerp, damp, fmtTime, rand, mulberry32,
-  makeCanvas, PHYS, settings, saveSettings, saveJSON, loadJSON, sanitizeText,
+  makeCanvas, PHYS, settings, saveSettings, saveJSON, loadJSON, sanitizeText, isMobileDevice,
 } from './util.js';
 import { audio } from './audio.js';
 import { music, TRACK_CATALOG } from './music.js';
@@ -12,6 +12,7 @@ import { buildWorld } from './world.js';
 import { createPlayer } from './player.js';
 import { CombatSystem } from './combat.js';
 import { MissionSystem } from './missions.js';
+import { TouchControls } from './touch.js';
 import {
   profile, SKILLS, SKINS, skillLevel, skillCost, buySkill, buySkin, equipSkin,
   addXp, addCredits, rankName, levelProgress, dailyInfo, skinDef, saveProfile, skillEffect,
@@ -65,6 +66,8 @@ const dom = {
   setQuality: $('set-quality'),
   setRT: $('set-rt'),
   setTime: $('set-time'),
+  setTouch: $('set-touch'),
+  chkAutoSprint: $('chk-autosprint'),
   setVolume: $('set-volume'),
   setMusicVolume: $('set-music-volume'),
   chkGhost: $('chk-ghost'),
@@ -78,7 +81,17 @@ const dom = {
   netfeed: $('netfeed'),
   chatLog: $('chat-log'),
   chatWrap: $('chat-wrap'),
+  chatForm: $('chat-form'),
   chatInput: $('chat-input'),
+  btnChatCancel: $('btn-chat-cancel'),
+  btnFinishContinue: $('btn-finish-continue'),
+  btnPauseX: $('btn-pause-x'),
+  btnRecordsX: $('btn-records-x'),
+  btnPauseRespawn: $('btn-pause-respawn'),
+  btnPauseLight: $('btn-pause-light'),
+  btnPauseMusic: $('btn-pause-music'),
+  btnPauseNext: $('btn-pause-next'),
+  btnPauseFs: $('btn-pause-fs'),
   runnerMarker: $('runner-marker'),
   nick: $('nick'),
   room: $('room'),
@@ -148,6 +161,8 @@ dom.setFov.value = settings.fov;
 dom.setQuality.value = settings.quality;
 dom.setRT.value = settings.rt || 'low';
 dom.setTime.value = settings.timeOfDay || 'morning';
+if (dom.setTouch) dom.setTouch.value = settings.touch || 'auto';
+if (dom.chkAutoSprint) dom.chkAutoSprint.checked = settings.autoSprint !== false;
 dom.setVolume.value = settings.volume;
 dom.setMusicVolume.value = settings.musicVolume;
 dom.chkGhost.checked = settings.ghost !== false;
@@ -156,7 +171,7 @@ dom.room.value = settings.room || 'white-city';
 
 /* ------------------------------------------------------- 渲染器 */
 const renderer = new THREE.WebGLRenderer({ canvas: dom.canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobileDevice() ? 1.5 : 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 /* 光照 / 阴影 / 后期管线全部由 src/graphics.js 接管 */
 
@@ -277,6 +292,12 @@ let focusRoute = null;
 let lockGrace = 0;
 
 const _moveInput = { x: 0, y: 0, len: 0 };
+let touch = null;
+const sprintHeld = () => keys.has('ShiftLeft') || keys.has('ShiftRight') || (touch ? touch.isSprinting() : false);
+const crouchHeld = () => keys.has('KeyC') || keys.has('ControlLeft') || keys.has('ControlRight') || (touch ? touch.isCrouching() : false);
+hooks.sprintHeld = sprintHeld;
+hooks.crouchHeld = crouchHeld;
+
 function getMoveInput() {
   let f = 0, s = 0;
   if (keys.has('KeyW') || keys.has('ArrowUp')) f += 1;
@@ -284,11 +305,54 @@ function getMoveInput() {
   if (keys.has('KeyD') || keys.has('ArrowRight')) s += 1;
   if (keys.has('KeyA') || keys.has('ArrowLeft')) s -= 1;
   const len = Math.hypot(f, s);
-  if (len > 0) { _moveInput.x = s / len; _moveInput.y = f / len; _moveInput.len = len; }
-  else { _moveInput.x = 0; _moveInput.y = 0; _moveInput.len = 0; }
+  if (len > 0) {
+    _moveInput.x = s / len;
+    _moveInput.y = f / len;
+    _moveInput.len = 1;
+    return _moveInput;
+  }
+  const tm = touch ? touch.getMove() : null;
+  if (tm && tm.len > 0) {
+    _moveInput.x = tm.x;
+    _moveInput.y = tm.y;
+    _moveInput.len = tm.len;
+    return _moveInput;
+  }
+  _moveInput.x = 0; _moveInput.y = 0; _moveInput.len = 0;
   return _moveInput;
 }
-const sprintHeld = () => keys.has('ShiftLeft') || keys.has('ShiftRight');
+
+touch = new TouchControls({
+  onLook: (dyaw, dpitch) => {
+    if (!P || gameState !== 'playing' || paused) return;
+    P.yaw -= dyaw;
+    P.pitch = clamp(P.pitch - dpitch, -1.45, 1.45);
+  },
+  onJump: () => {
+    jumpQueued = true;
+    if (gameState === 'playing' && player) player.queueJump();
+  },
+  onInteract: () => {
+    if (gameState === 'playing' && player) player.queueInteract();
+  },
+  onMelee: () => {
+    if (gameState === 'playing' && !paused && !anyPanelOpen()) tryMelee();
+  },
+  onTurn180: () => {
+    if (gameState === 'playing' && !paused && player) player.quickTurn();
+  },
+  getSpeed: () => (P ? Math.hypot(P.vel.x, P.vel.z) : 0),
+  onToggleMissions: () => { if (gameState === 'playing') toggleMissions(); },
+  onToggleShop: () => { if (gameState === 'playing') toggleShop(); },
+  onToggleTrial: () => { if (gameState === 'playing' && !paused) toggleTrial(); },
+  onToggleRecords: () => { if (gameState === 'playing') toggleRecords(!recordsOpen); },
+  onOpenChat: () => { if (gameState === 'playing' && !paused) openChat(); },
+  onTogglePause: () => { if (gameState === 'playing') togglePause(); },
+  onUserGesture: () => {
+    if (audio.ctx && audio.ctx.state !== 'running') audio.ctx.resume().catch(() => {});
+  },
+  onModeChange: () => { currentPrompt = '__dirty__'; },
+});
 
 document.addEventListener('keydown', (e) => {
   if (chat.open) {
@@ -307,6 +371,10 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyE') {
     if (gameState === 'playing') { player.queueInteract(); e.preventDefault(); }
+  }
+  if (e.code === 'KeyQ' && gameState === 'playing' && !paused && !anyPanelOpen()) {
+    player.quickTurn();
+    e.preventDefault();
   }
   if (e.code === 'KeyF' && gameState === 'playing' && !paused && !recordsOpen && !missionsOpen && !shopOpen) {
     tryMelee();
@@ -354,17 +422,22 @@ document.addEventListener('mousemove', (e) => {
   P.pitch = clamp(P.pitch, -1.45, 1.45);
 });
 document.addEventListener('pointerlockchange', () => {
+  if (touch && touch.active) return;
   const locked = document.pointerLockElement === dom.canvas;
   if (locked) { lockGrace = 0; return; }
   /* 刚请求/切换锁定时的短暂解锁不触发暂停（避免重开一局被误暂停） */
   if (!locked && gameState === 'playing' && !paused && !recordsOpen && lockGrace <= 0 && !chat.open) setPaused(true);
 });
-window.addEventListener('blur', () => { keys.clear(); jumpQueued = false; });
-dom.canvas.addEventListener('click', () => { if (gameState === 'playing' && !paused && !recordsOpen) requestLock(); });
+window.addEventListener('blur', () => { keys.clear(); jumpQueued = false; if (touch) touch.reset(); });
+dom.canvas.addEventListener('click', () => {
+  if (touch && touch.active) return;
+  if (gameState === 'playing' && !paused && !recordsOpen) requestLock();
+});
 
 function requestLock() {
+  if (touch && touch.active) return;
   lockGrace = 0.9;
-  if (document.pointerLockElement !== dom.canvas) {
+  if (document.pointerLockElement !== dom.canvas && dom.canvas.requestPointerLock) {
     try {
       const p = dom.canvas.requestPointerLock();
       if (p && p.catch) p.catch(() => {});
@@ -1054,6 +1127,7 @@ function openChat() {
   if (chat.open || gameState !== 'playing' || paused || recordsOpen) return;
   chat.open = true;
   keys.clear();
+  if (touch) touch.reset();
   dom.chatWrap.classList.add('show');
   dom.chatInput.value = '';
   dom.chatInput.focus();
@@ -1074,6 +1148,15 @@ function sendChat() {
     net.sendEvent('chat', { m: text });
   }
   closeChat();
+}
+if (dom.chatForm) {
+  dom.chatForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    sendChat();
+  });
+}
+if (dom.btnChatCancel) {
+  dom.btnChatCancel.addEventListener('click', () => closeChat());
 }
 
 /* ------------------------------------------------------- 联机化身 */
@@ -1407,14 +1490,37 @@ function updateHUD(dt) {
       if (d < meleeNear) meleeNear = d;
     }
   }
-  if (meleeNear < 3.0) prompt = '<b>F</b> 近战 · 缴械（反应时间）';
-  else if (zipNear && zipEnd === 'to' && zdd < 2.8 && P.grounded && P.pos.y > zipNear.to.y - 4) prompt = '<b>E</b> 抓住滑索 · 按住 <b>W</b> 上爬';
-  else if (zipNear && zdd < 2.8 && P.grounded && P.pos.y > zipNear.from.y - 4) prompt = '<b>E</b> 滑索下滑';
-  else if (nearest && nd < 1.4 && P.grounded && P.pos.y < nearest.topY - 0.5) prompt = '<b>W / E</b> 攀爬管道';
-  else if (P.moveState === 'climb' && P.climb && P.pos.y > P.climb.data.topY - 0.6) prompt = '<b>W</b> 翻上屋顶';
+  const isTouch = !!(touch && touch.active);
+  const canZip = !!(zipNear && zdd < 2.8 && P.grounded && P.pos.y > (zipEnd === 'to' ? zipNear.to.y : zipNear.from.y) - 4);
+  const canPipe = !!(nearest && nd < 1.4 && P.grounded && P.pos.y < nearest.topY - 0.5);
+  if (touch) {
+    touch.updateContext({
+      canInteract: canZip || canPipe,
+      canMelee: meleeNear < 4.2,
+      inTrial: trial.active,
+      needMissionDot: !(missions && missions.active),
+    });
+  }
+  if (meleeNear < 3.0) prompt = isTouch ? '点击 <b>缴械</b> · 近战反击（反应时间）' : '<b>F</b> 近战 · 缴械（反应时间）';
+  else if (zipNear && zipEnd === 'to' && zdd < 2.8 && P.grounded && P.pos.y > zipNear.to.y - 4) {
+    prompt = isTouch ? '点击 <b>互动</b> 抓滑索 · 上推摇杆上爬' : '<b>E</b> 抓住滑索 · 按住 <b>W</b> 上爬';
+  }
+  else if (zipNear && zdd < 2.8 && P.grounded && P.pos.y > zipNear.from.y - 4) {
+    prompt = isTouch ? '点击 <b>互动</b> 滑索下滑' : '<b>E</b> 滑索下滑';
+  }
+  else if (nearest && nd < 1.4 && P.grounded && P.pos.y < nearest.topY - 0.5) {
+    prompt = isTouch ? '上推摇杆 / 点击 <b>互动</b> 攀爬管道' : '<b>W / E</b> 攀爬管道';
+  }
+  else if (P.moveState === 'climb' && P.climb && P.pos.y > P.climb.data.topY - 0.6) {
+    prompt = isTouch ? '继续上推摇杆翻上屋顶' : '<b>W</b> 翻上屋顶';
+  }
   else if (P.moveState === 'normal' && !P.grounded && P.pos.x > 43 && P.pos.x < 57 && P.pos.z > -4 && P.pos.z < 1) prompt = '贴近红色跑道墙 · 蹬墙跑';
-  else if (P.pos.x > 29.5 && P.pos.x < 34.5 && P.pos.y > 13 && P.pos.y < 15 && hs > 5) prompt = '<b>C</b> 滑铲通过横杆';
-  else if (P.pos.x > 36.5 && P.pos.x < 39.5 && P.pos.y > 13 && P.pos.y < 15) prompt = '<b>SPACE</b> 翻越障碍';
+  else if (P.pos.x > 29.5 && P.pos.x < 34.5 && P.pos.y > 13 && P.pos.y < 15 && hs > 5) {
+    prompt = isTouch ? '点击 <b>铲/蹲</b> 滑铲通过横杆' : '<b>C</b> 滑铲通过横杆';
+  }
+  else if (P.pos.x > 36.5 && P.pos.x < 39.5 && P.pos.y > 13 && P.pos.y < 15) {
+    prompt = isTouch ? '点击 <b>跳</b> 翻越障碍' : '<b>SPACE</b> 翻越障碍';
+  }
   else if (P.pos.x > 133 && P.pos.x < 140.5 && P.pos.y < 9) prompt = '踩上弹簧板 · SPRINGBOARD';
   else if (trial.active && !trial.started) prompt = '穿过发光圆环 · 开始计时';
   if (prompt !== currentPrompt) {
@@ -1828,7 +1934,12 @@ function resetRun() {
   curDistrict = null;
   dom.damage.style.opacity = 0;
   cancelTrial(true);
-  showToast('◈ 按 J 接受第一份城市委托 · 跟随金色光柱 · 红色 = 跑者视觉路线', 3800);
+  showToast(
+    touch && touch.active
+      ? '◈ 点击右上角「任务」接取委托 · 推到底自动冲刺 · 红色 = 跑者视觉'
+      : '◈ 按 J 接受第一份城市委托 · 跟随金色光柱 · 红色 = 跑者视觉路线',
+    3800,
+  );
 }
 function quitToMenu() {
   setPaused(false);
@@ -1850,16 +1961,60 @@ function quitToMenu() {
 
 dom.btnStart.addEventListener('click', startGame);
 dom.btnResume.addEventListener('click', () => setPaused(false));
+if (dom.btnPauseX) dom.btnPauseX.addEventListener('click', () => setPaused(false));
 dom.btnRestart.addEventListener('click', () => { setPaused(false); startGame(); });
 dom.btnQuit.addEventListener('click', quitToMenu);
 dom.btnAgain.addEventListener('click', () => { dom.finish.classList.add('hidden'); setPaused(false); startGame(); });
+if (dom.btnFinishContinue) {
+  dom.btnFinishContinue.addEventListener('click', () => {
+    dom.finish.classList.add('hidden');
+    setPaused(false);
+  });
+}
 dom.btnRecordsClose.addEventListener('click', () => toggleRecords(false));
+if (dom.btnRecordsX) dom.btnRecordsX.addEventListener('click', () => toggleRecords(false));
+dom.records.addEventListener('click', (e) => { if (e.target === dom.records) toggleRecords(false); });
+dom.pause.addEventListener('click', (e) => { if (e.target === dom.pause) setPaused(false); });
 dom.btnMissionsClose.addEventListener('click', () => toggleMissions(false));
 dom.btnShopClose.addEventListener('click', () => toggleShop(false));
 document.getElementById('btn-missions-x').addEventListener('click', () => toggleMissions(false));
 document.getElementById('btn-shop-x').addEventListener('click', () => toggleShop(false));
 dom.missionsPanel.addEventListener('click', (e) => { if (e.target === dom.missionsPanel) toggleMissions(false); });
 dom.shopPanel.addEventListener('click', (e) => { if (e.target === dom.shopPanel) toggleShop(false); });
+
+/* 暂停面板快捷操作（移动端与桌面端通用） */
+if (dom.btnPauseRespawn) {
+  dom.btnPauseRespawn.addEventListener('click', () => {
+    setPaused(false);
+    if (player) { player.respawn(); stats.deaths++; showToast('↻ 返回最近的安全屋顶'); }
+  });
+}
+if (dom.btnPauseLight) {
+  dom.btnPauseLight.addEventListener('click', () => {
+    const i = TIME_PRESETS.indexOf(settings.timeOfDay || 'morning');
+    applyTimePreset(TIME_PRESETS[(i + 1) % TIME_PRESETS.length]);
+    audio.uiClick();
+  });
+}
+if (dom.btnPauseMusic) {
+  dom.btnPauseMusic.addEventListener('click', () => {
+    const on = music.toggle(false);
+    settings.musicOn = on;
+    saveSettings();
+    dom.btnPauseMusic.textContent = on ? '♪ 音乐：开' : '♪ 音乐：关';
+  });
+}
+if (dom.btnPauseNext) {
+  dom.btnPauseNext.addEventListener('click', () => {
+    music.next(false);
+  });
+}
+if (dom.btnPauseFs) {
+  if (touch && !touch.canFullscreen()) dom.btnPauseFs.style.display = 'none';
+  dom.btnPauseFs.addEventListener('click', () => {
+    if (touch) touch.toggleFullscreen(true);
+  });
+}
 dom.btnNet.addEventListener('click', () => {
   if (net.status === 'online' || net.status === 'local' || net.status === 'connecting') net.disconnect();
   else net.connect(dom.room.value, dom.nick.value);
@@ -1882,6 +2037,19 @@ dom.chkGhost.addEventListener('change', () => { settings.ghost = dom.chkGhost.ch
 dom.setQuality.addEventListener('change', () => { setQuality(dom.setQuality.value); saveSettings(); });
 dom.setRT.addEventListener('change', () => { settings.rt = dom.setRT.value; applyRT(); saveSettings(); });
 dom.setTime.addEventListener('change', () => applyTimePreset(dom.setTime.value));
+if (dom.setTouch) {
+  dom.setTouch.addEventListener('change', () => {
+    settings.touch = dom.setTouch.value;
+    saveSettings();
+    if (touch) touch.refreshMode();
+  });
+}
+if (dom.chkAutoSprint) {
+  dom.chkAutoSprint.addEventListener('change', () => {
+    settings.autoSprint = dom.chkAutoSprint.checked;
+    saveSettings();
+  });
+}
 
 music.onChange = (tr) => {
   dom.musicTrack.textContent = `${tr.name} · ${tr.mood}`;
@@ -1930,7 +2098,9 @@ function setQuality(q) {
     renderer.setPixelRatio(1);
     dom.fxCanvas.style.display = 'none';
   } else {
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, q === 'medium' ? 1.5 : 2));
+    const mobile = isMobileDevice();
+    const maxPr = mobile ? (q === 'medium' ? 1.35 : 1.65) : (q === 'medium' ? 1.5 : 2);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPr));
     dom.fxCanvas.style.display = '';
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2043,6 +2213,10 @@ function loop(now) {
   let dt = Math.min((now - lastTime) / 1000, 0.05);
   lastTime = now;
   if (lockGrace > 0) lockGrace -= dt;
+  if (touch) {
+    const finishOpen = !dom.finish.classList.contains('hidden');
+    touch.setGameplayVisible(gameState === 'playing' && !paused && !anyPanelOpen() && !chat.open && !finishOpen);
+  }
   const simDt = (gameState === 'playing' && !paused) ? dt : 0;
   if (simDt > 0) {
     arms.visible = true;
@@ -2073,13 +2247,20 @@ function loop(now) {
 }
 
 /* ------------------------------------------------------- 启动 */
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+function handleResize() {
+  const w = Math.max(1, window.innerWidth);
+  const h = Math.max(1, window.innerHeight);
+  camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(w, h);
   gfx.resize();
   resizeFx();
-});
+}
+window.addEventListener('resize', handleResize);
+window.addEventListener('orientationchange', () => setTimeout(handleResize, 120));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', handleResize);
+}
 
 function setLoading(pct, text) {
   dom.loadingFill.style.width = `${pct}%`;
@@ -2189,7 +2370,7 @@ boot();
 window.__MIRROR = {
   THREE,
   get physStats() { return world ? world.physStats : null; },
-  get P() { return P; }, stats, flow, flowSave, routes, trial, net, music, audio, scene, renderer, composer: gfx.composer, gfx,
+  get P() { return P; }, stats, flow, flowSave, routes, trial, net, music, audio, touch, scene, renderer, composer: gfx.composer, gfx,
   get missions() { return missions; }, get combat() { return combat; }, profile,
   melee: () => tryMelee(),
   /* 测试 / 调试：以固定步长推进模拟，不受渲染帧率影响 */
