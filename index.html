@@ -2,7 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0e14">
 <title>镜之边缘 · WEB — Mirror's Edge Parkour</title>
 <meta name="description" content="Three.js 程序化白色都市 · 第一人称跑酷 · 动态 BGM · 公共中继联机 · 计时挑战与幽灵回放">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0e14'/%3E%3Cpath d='M8 22 L16 6 L24 22' stroke='%23ff2e2e' stroke-width='3' fill='none'/%3E%3C/svg%3E">
@@ -18,11 +22,12 @@
     --text:#f5f8fc;
     --dim:#a7b3c2;
   }
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#0a0e14;
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;height:100dvh;overflow:hidden;overscroll-behavior:none;background:#0a0e14;
     font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:var(--text);
-    -webkit-user-select:none;user-select:none;}
-  canvas#game{position:fixed;inset:0;display:block}
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  input[type=text]{-webkit-user-select:text;user-select:text}
+  canvas#game{position:fixed;inset:0;display:block;touch-action:none}
   .layer{position:fixed;inset:0;pointer-events:none}
   #vignette{background:radial-gradient(ellipse at center, transparent 54%, rgba(0,0,0,.4) 100%)}
   #damage{background:radial-gradient(ellipse at center, rgba(120,0,0,0) 30%, rgba(190,10,10,.65) 100%);
@@ -144,10 +149,12 @@
   .chat-line{font-size:13px;color:#eaf2f8;background:rgba(10,14,22,.58);border-left:2px solid #8fd8ff;padding:4px 9px;border-radius:5px;transition:opacity .5s;word-break:break-word;line-height:1.45}
   .chat-line.out{opacity:0}
   .chat-line b{font-weight:700}
-  #chat-wrap{position:fixed;left:50%;bottom:112px;transform:translateX(-50%);z-index:40;display:none;width:min(560px,80vw)}
+  #chat-wrap{position:fixed;left:50%;bottom:112px;transform:translateX(-50%);z-index:40;display:none;width:min(560px,92vw);pointer-events:auto}
   #chat-wrap.show{display:block}
-  #chat-input{width:100%;background:rgba(8,12,18,.88);border:1px solid rgba(90,215,255,.5);border-radius:9px;color:#fff;font-size:15px;padding:11px 14px;outline:none;letter-spacing:1px;box-shadow:0 6px 26px rgba(0,0,0,.5)}
+  .chat-box{display:flex;gap:8px;align-items:center}
+  #chat-input{flex:1;min-width:0;background:rgba(8,12,18,.9);border:1px solid rgba(90,215,255,.5);border-radius:9px;color:#fff;font-size:16px;padding:10px 14px;outline:none;letter-spacing:1px;box-shadow:0 6px 26px rgba(0,0,0,.5)}
   #chat-input::placeholder{color:#66748a}
+  .chat-box .btn.small{padding:10px 14px;white-space:nowrap;flex-shrink:0}
   #runner-marker{position:fixed;z-index:12;display:none;pointer-events:none;transform:translate(-50%,-50%);text-align:center}
   #runner-marker.show{display:block}
   #runner-marker .dot{display:block;width:12px;height:12px;margin:0 auto;border:2px solid #b18cff;border-radius:50%;box-shadow:0 0 10px #b18cff}
@@ -165,7 +172,8 @@
   .overlay.hidden{opacity:0;pointer-events:none;visibility:hidden;transition:opacity .35s,visibility 0s .35s}
   .overlay.hidden,.overlay.hidden *{pointer-events:none !important}
   .overlay{transition:opacity .35s,visibility 0s}
-  .card{position:relative;width:min(800px,94vw);max-height:92vh;overflow:auto;background:linear-gradient(160deg,rgba(22,28,40,.92),rgba(8,11,18,.94));
+  .card{position:relative;width:min(800px,94vw);max-height:92vh;max-height:calc(100dvh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 20px);
+    overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y;background:linear-gradient(160deg,rgba(22,28,40,.92),rgba(8,11,18,.94));
     border:1px solid var(--panel-border);border-radius:18px;padding:24px 32px;box-shadow:0 30px 90px rgba(0,0,0,.7),inset 0 1px 0 rgba(255,255,255,.08)}
   #menu .card{padding:20px 28px}
   h1{font-size:min(44px,8vw);font-weight:800;letter-spacing:4px;line-height:.95}
@@ -197,7 +205,7 @@
   .loading-bar{width:240px;height:4px;background:rgba(255,255,255,.12);border-radius:4px;overflow:hidden;margin-top:16px}
   .loading-bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ff2e2e,#ffb199);transition:width .3s}
   #loading-card{text-align:center}
-  .ach-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 14px;margin-top:12px;max-height:34vh;overflow:auto}
+  .ach-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px 14px;margin-top:12px;max-height:34vh;overflow:auto;-webkit-overflow-scrolling:touch;touch-action:pan-y}
   .ach{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--dim);padding:8px 11px;border:1px solid rgba(255,255,255,.07);border-radius:10px}
   .ach .ico{font-size:18px;opacity:.35}
   .ach.unlocked{color:#ffe6a8;border-color:rgba(255,190,70,.35);background:rgba(255,180,40,.06)}
@@ -248,7 +256,185 @@
   .kcard .kprice{font-size:11px;color:var(--gold);margin-top:3px}
   .kcard .kprice.free{color:var(--dim)}
 
-  @media (max-width:640px){.card{padding:22px 18px}.keys{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}}
+  /* ==================== 移动端与触屏适配 ==================== */
+  .touch-keys{display:none}
+  body.touch-mode .desktop-keys{display:none}
+  body.touch-mode .touch-keys{display:grid}
+
+  #touch-ui{position:fixed;inset:0;z-index:14;pointer-events:none;touch-action:none}
+  #touch-ui.hidden{display:none !important}
+  #touch-look-zone{position:fixed;inset:0;pointer-events:auto;touch-action:none}
+  #touch-joy-zone{position:fixed;left:0;bottom:0;width:min(45vw,310px);height:min(56vh,290px);
+    pointer-events:auto;touch-action:none;z-index:15}
+  #touch-joy-base{position:absolute;left:calc(max(16px,env(safe-area-inset-left,0px)) + 68px);
+    top:calc(100% - max(16px,env(safe-area-inset-bottom,0px)) - 68px);width:118px;height:118px;
+    transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(14,20,30,.32) 0%,rgba(10,14,22,.56) 100%);
+    border:1.5px solid rgba(255,255,255,.22);box-shadow:0 6px 24px rgba(0,0,0,.35),inset 0 0 18px rgba(255,255,255,.05);
+    pointer-events:none;transition:border-color .15s,box-shadow .15s,opacity .2s;opacity:.78}
+  #touch-joy-base::after{content:"";position:absolute;inset:-8px;border-radius:50%;
+    border:1px dashed rgba(255,90,68,.24);pointer-events:none;transition:border-color .15s,transform .15s}
+  #touch-joy-base.active{opacity:1;border-color:rgba(90,215,255,.55);box-shadow:0 0 22px rgba(90,215,255,.22)}
+  #touch-joy-base.sprinting{border-color:rgba(255,85,68,.85);box-shadow:0 0 26px rgba(255,60,40,.42)}
+  #touch-joy-base.sprinting::after{border-color:rgba(255,85,68,.7);transform:scale(1.04)}
+  #touch-joy-knob{position:absolute;left:50%;top:50%;width:48px;height:48px;transform:translate(-50%,-50%);
+    border-radius:50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.92),rgba(195,215,235,.72));
+    border:1.5px solid rgba(255,255,255,.9);box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  #touch-joy-base.sprinting #touch-joy-knob{background:radial-gradient(circle at 35% 30%,#fff,#ff7a66);
+    border-color:#ffd4cc;box-shadow:0 0 16px rgba(255,70,50,.75)}
+
+  #btn-touch-sprint{position:fixed;left:calc(max(16px,env(safe-area-inset-left,0px)) + 28px);
+    bottom:calc(max(16px,env(safe-area-inset-bottom,0px)) + 140px);z-index:17;pointer-events:auto;touch-action:none;
+    background:rgba(10,14,22,.68);border:1px solid rgba(255,255,255,.2);color:var(--dim);border-radius:999px;
+    padding:6px 13px;font-size:11.5px;font-weight:600;letter-spacing:1.5px;backdrop-filter:blur(8px);cursor:pointer;
+    transition:background .15s,color .15s,border-color .15s,box-shadow .15s}
+  #btn-touch-sprint.active{background:rgba(255,58,42,.32);border-color:var(--red-glow);color:#fff;
+    box-shadow:0 0 16px rgba(255,60,40,.45)}
+
+  #touch-actions{position:fixed;right:max(14px,env(safe-area-inset-right,0px));
+    bottom:max(14px,env(safe-area-inset-bottom,0px));width:206px;height:166px;z-index:16;pointer-events:none}
+  .tbtn{position:absolute;pointer-events:auto;touch-action:none;border-radius:50%;
+    background:rgba(10,14,22,.68);border:1.5px solid rgba(255,255,255,.24);color:#f5f8fc;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+    backdrop-filter:blur(8px);box-shadow:0 6px 20px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.12);
+    cursor:pointer;transition:transform .08s,background .12s,border-color .15s,box-shadow .15s}
+  .tbtn b{font-size:15px;font-weight:700;letter-spacing:1px;line-height:1.05}
+  .tbtn small{font-size:9.5px;color:var(--dim);letter-spacing:.5px;line-height:1}
+  .tbtn.pressed{transform:scale(.92);background:rgba(255,255,255,.2);border-color:#fff}
+  #btn-touch-jump{right:4px;bottom:8px;width:78px;height:78px;
+    background:radial-gradient(circle at 35% 30%,rgba(255,82,64,.42),rgba(18,14,20,.78));
+    border-color:rgba(255,95,78,.72);box-shadow:0 8px 26px rgba(255,46,46,.28),inset 0 1px 0 rgba(255,255,255,.24)}
+  #btn-touch-jump b{font-size:18px}
+  #btn-touch-jump.pressed{background:rgba(255,74,58,.62);box-shadow:0 0 24px rgba(255,70,50,.65)}
+  #btn-touch-crouch{right:94px;bottom:2px;width:62px;height:62px}
+  #btn-touch-crouch.active{background:rgba(90,215,255,.28);border-color:var(--cyan);
+    box-shadow:0 0 18px rgba(90,215,255,.42)}
+  #btn-touch-crouch.active small{color:#d8f6ff}
+  #btn-touch-use{right:88px;bottom:76px;width:56px;height:56px}
+  #btn-touch-use.ctx-glow{background:rgba(90,215,255,.32);border-color:var(--cyan);
+    box-shadow:0 0 22px rgba(90,215,255,.65);animation:ctxPulse 1s ease-in-out infinite}
+  #btn-touch-melee{right:12px;bottom:98px;width:58px;height:58px}
+  #btn-touch-melee.ctx-danger{background:rgba(255,60,40,.42);border-color:var(--gold);
+    box-shadow:0 0 24px rgba(255,80,50,.78);animation:ctxPulse .8s ease-in-out infinite}
+  #btn-touch-turn{right:154px;bottom:52px;width:46px;height:46px}
+  #btn-touch-turn b{font-size:12.5px;letter-spacing:0}
+  @keyframes ctxPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+
+  #touch-quickbar{position:fixed;top:max(10px,env(safe-area-inset-top,0px));
+    right:max(12px,env(safe-area-inset-right,0px));z-index:20;display:flex;align-items:center;gap:6px;pointer-events:auto}
+  .qbtn{position:relative;pointer-events:auto;touch-action:manipulation;background:var(--panel);
+    border:1px solid var(--panel-border);color:var(--text);border-radius:9px;padding:7px 11px;
+    font-size:12px;font-weight:600;letter-spacing:1px;backdrop-filter:blur(8px);cursor:pointer;
+    display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+  .qbtn:active{transform:scale(.94);background:rgba(255,255,255,.16)}
+  .qbtn.active{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 14px rgba(90,215,255,.3)}
+  .qbtn.pause-btn{padding:7px 12px;border-color:rgba(255,255,255,.26);font-weight:700}
+  #qb-mission-dot{display:none;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px var(--gold)}
+  #qb-mission-dot.show{display:inline-block}
+
+  #portrait-tip{position:fixed;top:max(8px,env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);
+    z-index:60;display:none;align-items:center;gap:8px;background:rgba(10,15,24,.92);
+    border:1px solid rgba(90,215,255,.4);border-radius:999px;padding:6px 10px 6px 14px;
+    font-size:12px;color:#dff4ff;letter-spacing:1px;box-shadow:0 8px 26px rgba(0,0,0,.55);
+    backdrop-filter:blur(10px);white-space:nowrap;max-width:94vw}
+  #portrait-tip.show{display:flex}
+  #portrait-tip button{pointer-events:auto;cursor:pointer;border:none;border-radius:999px;font-size:11.5px;padding:4px 10px}
+  #btn-portrait-fs{background:linear-gradient(180deg,#ff4a3a,#e01f1f);color:#fff;font-weight:600;letter-spacing:1px}
+  #btn-portrait-close{background:rgba(255,255,255,.1);color:var(--dim);padding:4px 8px}
+
+  .pause-quick{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:14px}
+  .pause-quick .btn.small{padding:8px 14px;font-size:12px;letter-spacing:1.5px}
+  .finish-btns{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:14px}
+  .finish-btns .btn{margin-top:0}
+
+  /* 触屏模式下 HUD 避让左右拇指操控区 */
+  body.touch-mode #hint-line{display:none}
+  body.touch-mode #music-label,body.touch-mode #net-label{display:none}
+  body.touch-mode #prompt{pointer-events:auto;cursor:pointer;bottom:30%}
+  body.touch-mode #chat-wrap{top:calc(max(10px,env(safe-area-inset-top,0px)) + 48px);bottom:auto}
+  body.touch-mode #hud-top{left:max(12px,env(safe-area-inset-left,0px));top:max(10px,env(safe-area-inset-top,0px));
+    transform:none;gap:6px}
+  body.touch-mode #timer{font-size:17px;padding:5px 11px}
+  body.touch-mode #checkpoint-label,body.touch-mode #route-label,body.touch-mode #credit-label,body.touch-mode #level-label{
+    font-size:11px;padding:6px 9px;letter-spacing:1px}
+  body.touch-mode #hud-bl{left:50%;bottom:max(12px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+    align-items:center;gap:4px}
+  body.touch-mode #speed-box{font-size:26px}
+  body.touch-mode .health,body.touch-mode .stamina{width:136px;margin-top:2px}
+  body.touch-mode #flow-box{right:max(16px,env(safe-area-inset-right,0px));
+    bottom:calc(max(14px,env(safe-area-inset-bottom,0px)) + 174px)}
+  body.touch-mode #flow-num{font-size:30px}
+  body.touch-mode .flowbar{width:128px}
+  body.touch-mode #mission-hud{left:max(12px,env(safe-area-inset-left,0px));
+    top:calc(max(10px,env(safe-area-inset-top,0px)) + 44px);max-width:255px;padding:8px 11px}
+  body.touch-mode #chat-log{left:max(12px,env(safe-area-inset-left,0px));
+    bottom:calc(max(16px,env(safe-area-inset-bottom,0px)) + 178px);max-width:260px}
+  body.touch-mode #netfeed{top:calc(max(10px,env(safe-area-inset-top,0px)) + 44px);
+    right:max(12px,env(safe-area-inset-right,0px))}
+
+  @media (max-width:900px){
+    .menu-grid{grid-template-columns:1fr 1fr}
+    .settings-row input[type=text],.settings-row select{font-size:16px}
+    #menu .settings-row select{font-size:14px;max-width:152px}
+  }
+  @media (max-width:640px){
+    .card{padding:18px 16px;border-radius:14px}
+    #menu .card{padding:16px 15px}
+    .menu-grid{grid-template-columns:1fr;gap:4px 0}
+    .keys{grid-template-columns:1fr 1fr;gap:5px 10px}
+    .grid2{grid-template-columns:1fr}
+    .btn{padding:12px 30px;font-size:16px}
+    .panel-close{width:38px;height:38px;font-size:22px;right:10px;top:10px}
+    #objective{font-size:12.5px;padding:6px 16px;letter-spacing:1.5px;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+    #trial{gap:9px;padding:7px 12px;top:92px;max-width:94vw}
+    #trial-time{font-size:17px}
+    #trial-delta{min-width:64px;font-size:11.5px}
+    /* 竖屏窄屏下触屏 HUD 分层排布，彻底避免顶栏碰撞 */
+    body.touch-mode #touch-quickbar{left:max(8px,env(safe-area-inset-left,0px));
+      right:max(8px,env(safe-area-inset-right,0px));justify-content:space-between;gap:4px}
+    body.touch-mode .qbtn{padding:6px 8px;font-size:11.5px;letter-spacing:.5px;flex:1;justify-content:center}
+    body.touch-mode .qbtn.pause-btn{flex:0 0 auto;padding:6px 11px}
+    body.touch-mode #hud-top{top:calc(max(8px,env(safe-area-inset-top,0px)) + 38px);left:50%;
+      transform:translateX(-50%);width:calc(100vw - 16px);justify-content:center;flex-wrap:wrap;gap:4px}
+    body.touch-mode #route-label{display:none}
+    body.touch-mode #hud-bl{left:max(10px,env(safe-area-inset-left,0px));
+      top:calc(max(8px,env(safe-area-inset-top,0px)) + 74px);bottom:auto;transform:none;align-items:flex-start}
+    body.touch-mode #speed-box{font-size:22px}
+    body.touch-mode .health,body.touch-mode .stamina{width:112px}
+    body.touch-mode #flow-box{right:max(10px,env(safe-area-inset-right,0px));
+      top:calc(max(8px,env(safe-area-inset-top,0px)) + 72px);bottom:auto}
+    body.touch-mode #flow-num{font-size:26px}
+    body.touch-mode .flowbar{width:104px}
+    body.touch-mode #mission-hud{left:max(10px,env(safe-area-inset-left,0px));
+      right:max(10px,env(safe-area-inset-right,0px));top:calc(max(8px,env(safe-area-inset-top,0px)) + 144px);
+      max-width:none;padding:7px 10px}
+    body.touch-mode #mission-hud .mh-obj{font-size:12px;margin-top:3px}
+    body.touch-mode #objective{top:calc(max(8px,env(safe-area-inset-top,0px)) + 216px)}
+    body.touch-mode #alert-banner{top:calc(max(8px,env(safe-area-inset-top,0px)) + 246px);font-size:11.5px;padding:6px 18px}
+    body.touch-mode #chat-wrap{top:calc(max(8px,env(safe-area-inset-top,0px)) + 44px)}
+  }
+  @media (max-width:420px){
+    #touch-actions{transform:scale(.88);transform-origin:bottom right}
+    #touch-joy-base{width:106px;height:106px}
+  }
+  /* 手机横屏紧凑高度适配（如 844×390） */
+  @media (max-height:500px){
+    .card{padding:14px 20px}
+    #menu .card{padding:12px 18px}
+    h1{font-size:min(30px,6vw)}
+    .subtitle{font-size:11.5px;margin-top:3px}
+    .divider{margin:8px 0}
+    .section-title{margin:7px 0 4px;font-size:11.5px}
+    .btn{margin-top:8px;padding:10px 28px;font-size:15px}
+    .ach-list{max-height:42vh}
+    body.touch-mode #touch-actions{transform:scale(.9);transform-origin:bottom right}
+    body.touch-mode #touch-joy-base{width:106px;height:106px;
+      top:calc(100% - max(10px,env(safe-area-inset-bottom,0px)) - 60px)}
+    body.touch-mode #btn-touch-sprint{bottom:calc(max(10px,env(safe-area-inset-bottom,0px)) + 124px)}
+    body.touch-mode #flow-box{bottom:calc(max(10px,env(safe-area-inset-bottom,0px)) + 154px)}
+    body.touch-mode #objective{top:50px;font-size:13px}
+    body.touch-mode #alert-banner{top:82px;font-size:12px}
+    body.touch-mode #trial{top:52px;padding:6px 14px}
+  }
 </style>
 <link rel="modulepreload" href="./vendor/three.module.js">
 <link rel="modulepreload" href="./vendor/addons/postprocessing/EffectComposer.js">
@@ -300,10 +486,45 @@ setTimeout(function () {
 <div id="ach-toast">🏆 成就解锁</div>
 <div id="netfeed"></div>
 <div id="chat-log"></div>
-<div id="chat-wrap"><input id="chat-input" type="text" maxlength="120" placeholder="输入消息，Enter 发送 · Esc 取消"></div>
+<div id="chat-wrap">
+  <form id="chat-form" class="chat-box" autocomplete="off">
+    <input id="chat-input" type="text" maxlength="120" enterkeyhint="send" placeholder="输入消息…">
+    <button type="submit" id="btn-chat-send" class="btn small">发送</button>
+    <button type="button" id="btn-chat-cancel" class="btn ghost small">取消</button>
+  </form>
+</div>
 <div id="runner-marker"><span class="dot"></span><em>RUNNER</em></div>
 <div id="music-label">♪ <span id="music-track">BGM OFF</span></div>
 <div id="net-label">◉ <span id="net-status">离线</span> <span id="net-count"></span></div>
+
+<div id="portrait-tip">
+  <span>📱 建议横屏游玩，视野与操控更佳</span>
+  <button type="button" id="btn-portrait-fs">全屏横屏</button>
+  <button type="button" id="btn-portrait-close" aria-label="关闭提示">×</button>
+</div>
+
+<div id="touch-ui" class="hidden">
+  <div id="touch-look-zone"></div>
+  <div id="touch-joy-zone">
+    <div id="touch-joy-base"><div id="touch-joy-knob"></div></div>
+  </div>
+  <button type="button" id="btn-touch-sprint">⚡ 冲刺</button>
+  <div id="touch-actions">
+    <button type="button" class="tbtn" id="btn-touch-jump"><b>跳</b><small>翻越/蹬墙</small></button>
+    <button type="button" class="tbtn" id="btn-touch-crouch"><b>铲/蹲</b><small id="btn-touch-crouch-sub">滑铲/蹲</small></button>
+    <button type="button" class="tbtn" id="btn-touch-use"><b>互动</b><small>滑索/攀爬</small></button>
+    <button type="button" class="tbtn" id="btn-touch-melee"><b>缴械</b><small>近战反击</small></button>
+    <button type="button" class="tbtn" id="btn-touch-turn"><b>180°</b><small>急转</small></button>
+  </div>
+  <div id="touch-quickbar">
+    <button type="button" class="qbtn" id="btn-qb-mission"><i id="qb-mission-dot"></i>任务</button>
+    <button type="button" class="qbtn" id="btn-qb-shop">技能</button>
+    <button type="button" class="qbtn" id="btn-qb-trial">计时</button>
+    <button type="button" class="qbtn" id="btn-qb-records">记录</button>
+    <button type="button" class="qbtn" id="btn-qb-chat">聊天</button>
+    <button type="button" class="qbtn pause-btn" id="btn-qb-pause" aria-label="暂停">⏸</button>
+  </div>
+</div>
 
 <div id="hud-bl" class="hud">
   <div id="speed-box">0<small> m/s</small></div>
@@ -328,10 +549,10 @@ setTimeout(function () {
     <div class="menu-grid">
       <div>
         <div class="section-title">跑酷操作 · MOVE</div>
-        <div class="keys">
+        <div class="keys desktop-keys">
           <div><kbd>W A S D</kbd><b>移动</b></div>
           <div><kbd>鼠标</kbd><b>视角</b></div>
-          <div><kbd>SHIFT</kbd><b>冲刺</b> · <kbd>S</kbd><b>180° 急转</b></div>
+          <div><kbd>SHIFT</kbd><b>冲刺</b> · <kbd>Q</kbd><b>180° 急转</b></div>
           <div><kbd>SPACE</kbd><b>跳跃 / 蹬墙跳 / 翻越</b></div>
           <div><kbd>C</kbd>/<kbd>CTRL</kbd><b>滑铲 / 蹲下</b></div>
           <div><kbd>E</kbd><b>滑索 / 攀爬管道</b></div>
@@ -342,6 +563,16 @@ setTimeout(function () {
           <div><kbd>O</kbd><b>记录 / 成就 / 排行</b></div>
           <div><kbd>M</kbd>/<kbd>N</kbd><b>音乐</b> · <kbd>L</kbd><b>光照</b></div>
           <div><kbd>ENTER</kbd><b>聊天</b> · <kbd>ESC</kbd><b>暂停</b></div>
+        </div>
+        <div class="keys touch-keys">
+          <div><kbd>左摇杆</kbd><b>移动 · 推到底冲刺</b></div>
+          <div><kbd>右半屏</kbd><b>划动自由转向</b></div>
+          <div><kbd>跳</kbd><b>跳跃 / 翻越 / 蹬墙跳</b></div>
+          <div><kbd>铲/蹲</kbd><b>高速滑铲 · 轻点潜行</b></div>
+          <div><kbd>互动</kbd><b>抓滑索 / 攀爬管道</b></div>
+          <div><kbd>缴械</kbd><b>近战反击（慢动作）</b></div>
+          <div><kbd>180°</kbd><b>急转掉头 / 蹬墙反跳</b></div>
+          <div><kbd>顶部栏</kbd><b>任务 / 技能 / 计时 / 暂停</b></div>
         </div>
       </div>
       <div>
@@ -366,6 +597,12 @@ setTimeout(function () {
           <option value="golden">黄昏 · 暖阳</option>
           <option value="overcast">阴天 · 柔光</option>
         </select></div>
+        <div class="settings-row"><label>触屏操控</label><select id="set-touch">
+          <option value="auto">自动识别</option>
+          <option value="on">始终开启</option>
+          <option value="off">关闭</option>
+        </select></div>
+        <div class="settings-row"><label>推摇杆冲刺</label><input id="chk-autosprint" type="checkbox" checked></div>
         <div class="settings-row"><label>幽灵回放</label><input id="chk-ghost" type="checkbox" checked></div>
         <div class="settings-row"><label>SFX 音量</label><input id="set-volume" type="range" min="0" max="1" step="0.05" value="0.8"></div>
         <div class="settings-row"><label>BGM 音量</label><input id="set-music-volume" type="range" min="0" max="1" step="0.05" value="0.42"></div>
@@ -373,7 +610,7 @@ setTimeout(function () {
     </div>
     <div style="text-align:center;margin-top:12px">
       <button id="btn-start" class="btn">点击开始</button>
-      <div id="menu-best" style="margin-top:9px;font-size:12px;color:#66748a;letter-spacing:1px">红色 = 跑者视觉 · J 任务 · K 技能 · F 缴械 · 追捕中可用慢动作反击</div>
+      <div id="menu-best" style="margin-top:9px;font-size:12px;color:#66748a;letter-spacing:1px">红色 = 跑者视觉 · 支持触屏与键鼠 · 追捕中可近战缴械触发反应时间</div>
     </div>
 
   </div>
@@ -381,11 +618,21 @@ setTimeout(function () {
 
 <div id="pause" class="overlay hidden">
   <div class="card" style="text-align:center">
+    <button class="panel-close" id="btn-pause-x" title="继续">×</button>
     <h1 style="font-size:40px">已暂停</h1>
     <div class="divider"></div>
-    <button id="btn-resume" class="btn">继续奔跑</button>
-    <button id="btn-restart" class="btn ghost">重新开始</button>
-    <button id="btn-quit" class="btn ghost">返回主菜单</button>
+    <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:10px">
+      <button id="btn-resume" class="btn" style="margin-top:0">继续奔跑</button>
+      <button id="btn-restart" class="btn ghost" style="margin-top:0">重新开始</button>
+      <button id="btn-quit" class="btn ghost" style="margin-top:0">返回主菜单</button>
+    </div>
+    <div class="pause-quick">
+      <button type="button" id="btn-pause-respawn" class="btn ghost small">↻ 安全屋顶</button>
+      <button type="button" id="btn-pause-light" class="btn ghost small">☀ 切换光照</button>
+      <button type="button" id="btn-pause-music" class="btn ghost small">♪ 音乐开关</button>
+      <button type="button" id="btn-pause-next" class="btn ghost small">⏭ 下一曲</button>
+      <button type="button" id="btn-pause-fs" class="btn ghost small">⛶ 全屏显示</button>
+    </div>
   </div>
 </div>
 
@@ -401,12 +648,16 @@ setTimeout(function () {
     <div class="stat-line"><span>坠落次数</span><b id="stat-deaths">0</b></div>
     <div class="stat-line"><span>完成路线</span><b id="stat-cp">0/0</b></div>
     <div class="stat-line"><span>计时挑战 / 纪录</span><b id="stat-route">0 · 0</b></div>
-    <button id="btn-again" class="btn">再跑一次</button>
+    <div class="finish-btns">
+      <button id="btn-again" class="btn">再跑一次</button>
+      <button id="btn-finish-continue" class="btn ghost">继续自由跑酷</button>
+    </div>
   </div>
 </div>
 
 <div id="records" class="overlay hidden">
   <div class="card">
+    <button class="panel-close" id="btn-records-x" title="关闭">×</button>
     <div class="tag">FREE RUN · 自由跑酷</div>
     <h1 style="font-size:36px">记录 · 成就 · 排行</h1>
     <div class="divider"></div>

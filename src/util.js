@@ -86,22 +86,37 @@ export function saveJSON(key, obj) {
   try { localStorage.setItem(key, JSON.stringify(obj)); } catch (e) { /* quota */ }
 }
 
-/* 设置（与旧版键名兼容） */
+/* 移动端 / 触屏设备检测（兼容 iPadOS 桌面 UA 伪装与粗指针媒体查询） */
+export function isMobileDevice() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua)) return true;
+  if (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) return true;
+  if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches && navigator.maxTouchPoints > 0) return true;
+  return false;
+}
+
+const _savedSettings = loadJSON('mirrorweb-settings', null);
+const _mobileInit = isMobileDevice();
+
+/* 设置（与旧版键名兼容；首次在移动设备打开默认采用均衡画质保障流畅帧率） */
 export const settings = {
   sens: 1.0,
   fov: 80,
-  quality: 'high',
+  quality: _mobileInit ? 'medium' : 'high',
   volume: 0.8,
   musicVolume: 0.42,
   musicOn: true,
   ghost: true,
-  rt: 'low',
+  rt: _mobileInit ? 'off' : 'low',
   timeOfDay: 'morning',
   net: true,
   name: '',
   room: 'white-city',
+  touch: 'auto',
+  autoSprint: true,
 };
-try { Object.assign(settings, loadJSON('mirrorweb-settings', {})); } catch (e) { /* ignore */ }
+try { if (_savedSettings) Object.assign(settings, _savedSettings); } catch (e) { /* ignore */ }
 export function saveSettings() { saveJSON('mirrorweb-settings', settings); }
 
 export function sanitizeText(s, max = 12) {

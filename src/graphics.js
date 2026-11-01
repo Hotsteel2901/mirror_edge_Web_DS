@@ -653,6 +653,7 @@ export class Graphics {
       this.renderScale = 1;
       return;
     }
+    this.renderScale = 1;
     this.renderer.shadowMap.enabled = true;
     this.shadow.sun.castShadow = true;
     this.shadow.setTier(shadowTier);
@@ -819,8 +820,8 @@ export class Graphics {
     this.aoPass.uniforms.uFovTan.value = Math.tan((camera.fov * Math.PI) / 360);
     this.aoPass.uniforms.uAspect.value = camera.aspect;
 
-    /* 自适应分辨率（仅高画质；缓慢、带滞回） */
-    if (this.quality === 'high' && ctx && ctx.adaptive !== false) {
+    /* 自适应分辨率（高/中画质生效，兼顾移动端帧率；缓慢、带滞回） */
+    if ((this.quality === 'high' || this.quality === 'medium') && ctx && ctx.adaptive !== false) {
       this._frameAcc += dt;
       this._frameCount++;
       this._scaleTimer -= dt;
@@ -828,8 +829,8 @@ export class Graphics {
         this.fpsAvg = this._frameCount / this._frameAcc;
         this._frameAcc = 0; this._frameCount = 0;
         if (this._scaleTimer <= 0) {
-          if (this.fpsAvg < 48 && this.renderScale > 0.7) {
-            this.renderScale = Math.max(0.7, this.renderScale - 0.1);
+          if (this.fpsAvg < 48 && this.renderScale > 0.65) {
+            this.renderScale = Math.max(0.65, this.renderScale - 0.1);
             this._applyRenderScale();
             this._scaleTimer = 2.5;
           } else if (this.fpsAvg > 58 && this.renderScale < 1) {
@@ -866,6 +867,7 @@ export class Graphics {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    this.composer.setPixelRatio(this.renderer.getPixelRatio() * this.renderScale);
     this.composer.setSize(w, h);
     this.bloomPass.setSize(w, h);
     const pw = Math.max(1, Math.floor(w / 2)), ph = Math.max(1, Math.floor(h / 2));

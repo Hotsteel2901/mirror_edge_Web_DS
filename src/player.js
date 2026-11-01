@@ -377,8 +377,9 @@ export function createPlayer(world, hooks) {
     P.yaw = dampAngle(P.yaw, -Math.PI / 2, 10, dt);
     P.pitch = damp(P.pitch, -0.06, 8, dt);
     P.roll = damp(P.roll, 0, 8, dt);
-    const up = hooks.keys.has('KeyW') || hooks.keys.has('ArrowUp');
-    const down = hooks.keys.has('KeyS') || hooks.keys.has('ArrowDown');
+    const mv = hooks.getMoveInput();
+    const up = hooks.keys.has('KeyW') || hooks.keys.has('ArrowUp') || mv.y > 0.25;
+    const down = hooks.keys.has('KeyS') || hooks.keys.has('ArrowDown') || mv.y < -0.25;
     const speed = (up ? 4.4 : 0) + (down ? -3.3 : 0);
     P.pos.y += speed * dt;
     P.pos.x = cd.x - 0.54;
@@ -472,9 +473,10 @@ export function createPlayer(world, hooks) {
       P.vel.copy(dir).multiplyScalar(14.5 * skillEffect.zipSpeed());
       audio.setLoop('zip', { gain: 0.1, freq: 1900 }, 0.1);
     } else {
-      /* 上爬：按住 W 才前进；松开沿索回滑；S 主动下滑 */
-      const w = hooks.keys.has('KeyW') || hooks.keys.has('ArrowUp');
-      const dn = hooks.keys.has('KeyS') || hooks.keys.has('ArrowDown');
+      /* 上爬：按住 W / 上推摇杆才前进；松开沿索回滑；S / 下拉摇杆主动下滑 */
+      const mv = hooks.getMoveInput();
+      const w = hooks.keys.has('KeyW') || hooks.keys.has('ArrowUp') || mv.y > 0.25;
+      const dn = hooks.keys.has('KeyS') || hooks.keys.has('ArrowDown') || mv.y < -0.25;
       const slope = Math.max(0.08, (zd.from.y - zd.to.y) / Math.max(1, z.len));
       const gravityAlong = PHYS.GRAVITY * Math.min(1, slope);
       /* 爬升力始终比重力分量大 10 m/s²，陡索只是更慢，不会爬不动 */
@@ -554,6 +556,30 @@ export function createPlayer(world, hooks) {
     audio.stopLoop('zip', 0.3);
   }
 
+  function quickTurn() {
+    if (P.moveState === 'dead' || P.moveState === 'turn' || P.camTurn) return;
+    if (P.moveState === 'wallrun') {
+      const z = P.wallrun ? P.wallrun.zone : null;
+      const n = z ? z.wallNormal : null;
+      wallJump(false);
+      P.camTurn = {
+        t: 0, dur: 0.2, from: P.yaw,
+        to: n ? Math.atan2(-n.x, -n.z) : P.yaw + Math.PI,
+      };
+      return;
+    }
+    if (P.moveState === 'normal' && P.grounded && horizSpeed() > 7.5) {
+      startTurn(1);
+      audio.whoosh();
+      return;
+    }
+    if (P.moveState === 'normal' || P.moveState === 'crouch') {
+      P.camTurn = { t: 0, dur: 0.2, from: P.yaw, to: P.yaw + Math.PI };
+      P.fovKick = Math.max(P.fovKick, 1.8);
+      audio.whoosh();
+    }
+  }
+
   function respawn() {
     const safe = P.lastSafe;
     P.pos.copy(safe.pos);
@@ -564,7 +590,7 @@ export function createPlayer(world, hooks) {
     P.height = PHYS.PLAYER_HEIGHT;
     P.eye = PHYS.EYE_HEIGHT;
     P.moveState = 'normal';
-    P.slide = P.mantle = P.vault = P.wallrun = P.climb = P.zipline = P.turn = null;
+    P.slide = P.mantle = P.vault = P.wallrun = P.climb = P.zipline = P.turn = P.camTurn = null;
     P.grounded = false;
     P.stamina = 100;
     P.exhausted = false;
@@ -589,7 +615,7 @@ export function createPlayer(world, hooks) {
     P.yaw = yaw;
     P.pitch = 0;
     P.moveState = 'normal';
-    P.slide = P.mantle = P.vault = P.wallrun = P.climb = P.zipline = P.turn = null;
+    P.slide = P.mantle = P.vault = P.wallrun = P.climb = P.zipline = P.turn = P.camTurn = null;
     P.grounded = false;
     P.fallStartY = y;
     stopLoops();
@@ -603,6 +629,13 @@ export function createPlayer(world, hooks) {
     if (P.wallCooldown > 0) P.wallCooldown -= dt;
     if (interactTimer > 0) interactTimer -= dt;
     P.interactTimer = interactTimer;
+    if (P.camTurn) {
+      P.camTurn.t += dt;
+      const k = clamp(P.camTurn.t / P.camTurn.dur, 0, 1);
+      const e = 1 - Math.pow(1 - k, 3);
+      P.yaw = P.camTurn.from + (P.camTurn.to - P.camTurn.from) * e;
+      if (k >= 1) P.camTurn = null;
+    }
     if (P.moveState === 'dead') { updateDead(dt); return; }
     if (P.moveState === 'mantle') { updateMantle(dt); return; }
     if (P.moveState === 'vault') { updateVault(dt); return; }
@@ -614,7 +647,7 @@ export function createPlayer(world, hooks) {
     const wishDir = _wish;
     wishDir.set(0, 0, 0);
     wishDir.addScaledVector(rightVec(), move.x).addScaledVector(forwardVec(), move.y);
-    if (wishDir.lengthSq() > 1) wishDir.normalize();
+    if (wishDir.lengthSq() > 1e-6) wishDir.normalize();
     const hs = horizSpeed();
 
     /* 攀爬管道 / 滑索交互 */
@@ -732,7 +765,8 @@ export function createPlayer(world, hooks) {
       }
     } else {
       if (move.len > 0) {
-        const targetX = wishDir.x * maxSpeed, targetZ = wishDir.z * maxSpeed;
+        const analog = Math.min(1, move.len);
+        const targetX = wishDir.x * maxSpeed * analog, targetZ = wishDir.z * maxSpeed * analog;
         const lam = P.grounded ? 11.5 : 3.2;
         P.vel.x = damp(P.vel.x, targetX, lam, dt);
         P.vel.z = damp(P.vel.z, targetZ, lam, dt);
@@ -908,5 +942,5 @@ export function createPlayer(world, hooks) {
     if (P.pos.y < -25) die('void');
   }
 
-  return { P, update, respawn, reset, die, teleport, queueJump, queueInteract };
+  return { P, update, respawn, reset, die, teleport, queueJump, queueInteract, quickTurn };
 }
