@@ -1335,6 +1335,15 @@ function updateSpeedFx(dt) {
 
 /* ------------------------------------------------------- 相机 */
 /* 阴影跟随 / 按需重绘已迁移至 Graphics.update */
+
+/* 摄影机调度状态：全部与物理量分离，状态切换 / 落地时靠阻尼和弹簧过渡，不会跳帧 */
+const CAMFX = {
+  amp: 0,          /* 步频起伏强度 0..1，随速度缓入缓出 */
+  roll: 0, pitch: 0,
+  slideRumble: 0,  /* 滑铲时的低频震动 */
+  airPitch: 0,     /* 空中随垂直速度的轻微俯仰 */
+};
+
 const _camRight = new THREE.Vector3();
 function updateCamera(dt) {
   const hs = Math.hypot(P.vel.x, P.vel.z);
@@ -1346,12 +1355,48 @@ function updateCamera(dt) {
   P.height = damp(P.height, targetH, 14, dt);
   P.eye = damp(P.eye, targetEye, 14, dt);
 
-  const bobSpeed = P.grounded && (P.moveState === 'normal' || P.moveState === 'crouch') ? hs : 0;
-  P.bobTime += dt * (2.0 + bobSpeed * 1.45);
-  const bobAmp = clamp(bobSpeed / PHYS.SPRINT_SPEED, 0, 1);
-  P.bobY = damp(P.bobY, Math.sin(P.bobTime) * 0.05 * bobAmp + Math.sin(P.bobTime * 0.5) * 0.016, 14, dt);
-  P.bobX = damp(P.bobX, Math.cos(P.bobTime * 0.5) * 0.032 * bobAmp, 14, dt);
-  P.landDip = damp(P.landDip, 0, 8, dt);
+  /* ---------------- 跑步镜头晃动（步频锁定） ----------------
+     相位直接取自 player 的落脚计时器：每响一声脚步 P.stepPhase 归零，
+     所以起伏、摆动、侧倾与真实脚步声严格同相，速度变了也不会跑拍。
+       · 竖直：每次落脚一次压缩下沉、蹬离后回升（跑步重心的真实曲线）
+       · 左右：一个步幅一次，朝支撑脚一侧偏移
+       · 角运动：侧倾跟随摆动，俯仰跟随重心，冲刺时幅度更大 */
+  const running = P.grounded && (P.moveState === 'normal' || P.moveState === 'crouch');
+  const moveFade = running ? clamp((hs - 0.8) / 4.5, 0, 1) : 0;
+  CAMFX.amp = damp(CAMFX.amp, moveFade, 7, dt);
+  P.bobTime += dt * (2.0 + (running ? hs : 0) * 1.45);   /* 仅手臂摆动沿用旧计时器 */
+
+  const amp = CAMFX.amp;
+  const sprint01 = clamp(hs / PHYS.SPRINT_SPEED, 0, 1);
+  const u = P.stepPhase;
+  const ph = u * Math.PI * 2;           /* 每次落脚一个周期 */
+  const stride = u * Math.PI;           /* 左右交替，一个完整步幅 = 两次落脚 */
+  const side = P.foot ? 1 : -1;         /* 本次支撑脚：+1 右脚 / -1 左脚 */
+  const vert = Math.cos(ph + Math.PI * 0.7); /* 落脚后约 15% 步幅到达最低点 */
+
+  P.bobY = vert * (0.030 + sprint01 * 0.050) * amp;
+  P.bobX = Math.sin(stride) * side * (0.014 + sprint01 * 0.018) * amp;
+  CAMFX.roll = Math.sin(stride) * side * (0.006 + sprint01 * 0.007) * amp;
+  CAMFX.pitch = vert * (0.0022 + sprint01 * 0.0028) * amp;
+
+  /* 落脚冲击：脚步落地瞬间的短促下沉 + 朝支撑脚一侧的侧倾脉冲 */
+  P.stepKick = damp(P.stepKick, 0, 9, dt);
+  const kick = P.stepKick * amp;
+  P.bobY -= kick * 0.012;
+  CAMFX.roll += side * kick * 0.005;
+
+  /* 落地缓冲：欠阻尼弹簧，回收时带一下轻微回弹，而不是直接"抹平" */
+  const springK = 150, springC = 14;
+  P.landVel += (-springK * P.landDip - springC * P.landVel) * dt;
+  P.landDip = clamp(P.landDip + P.landVel * dt, -0.2, 0.05);
+
+  /* 滑铲：贴地滑行的低频震动（速度越快越明显） */
+  const rumbleK = P.moveState === 'slide' ? clamp(hs / PHYS.SPRINT_SPEED, 0.2, 1) : 0;
+  CAMFX.slideRumble = damp(CAMFX.slideRumble, rumbleK, 8, dt);
+
+  /* 空中：随垂直速度轻微俯仰，下落时视线略微下压，起跳时略微上扬 */
+  const airPitchK = (!P.grounded && (P.moveState === 'normal' || P.moveState === 'crouch')) ? 1 : 0;
+  CAMFX.airPitch = damp(CAMFX.airPitch, clamp(P.vel.y * 0.003, -0.03, 0.03) * airPitchK, 4, dt);
 
   let fovTarget = settings.fov;
   if (sprintHeld() && hs > 7) fovTarget += 6;
@@ -1373,14 +1418,33 @@ function updateCamera(dt) {
   camera.position.addScaledVector(r, P.bobX);
   camera.position.y += P.bobY;
 
-  const shake = P.trauma * P.trauma * 0.26;
+  const nowT = performance.now() * 0.001;
+  /* 滑铲震动：两个不成整数比的低频正弦叠加，避免机械感 */
+  if (CAMFX.slideRumble > 0.001) {
+    const rk = CAMFX.slideRumble;
+    camera.position.y += (Math.sin(nowT * 53.0) * 0.0030 + Math.sin(nowT * 89.0 + 1.7) * 0.0014) * rk;
+    camera.position.addScaledVector(r, Math.sin(nowT * 41.0 + 0.6) * 0.0016 * rk);
+  }
+
+  /* 创伤抖动：位移 + 角运动叠加，重击 / 坠落时更有分量 */
+  const shake = P.trauma * P.trauma * 0.22;
+  let shX = 0, shY = 0, shPitch = 0, shRoll = 0;
   if (shake > 0.0001) {
-    const t = performance.now();
-    camera.position.x += (Math.sin(t * 0.045) * 0.5 + Math.sin(t * 0.021 + 1.3) * 0.5) * shake;
-    camera.position.y += (Math.cos(t * 0.037 + 0.7) * 0.5 + Math.sin(t * 0.019 + 2.1) * 0.5) * shake;
+    shX = (Math.sin(nowT * 37.1) * 0.6 + Math.sin(nowT * 23.7 + 1.3) * 0.4) * shake;
+    shY = (Math.cos(nowT * 31.3 + 0.7) * 0.6 + Math.sin(nowT * 19.1 + 2.1) * 0.4) * shake;
+    const ang = P.trauma * P.trauma * 0.9;
+    shPitch = Math.cos(nowT * 33.9 + 2.3) * 0.024 * ang;
+    shRoll = Math.sin(nowT * 27.7 + 0.9) * 0.030 * ang;
+    camera.position.x += shX;
+    camera.position.y += shY;
   }
   P.trauma = Math.max(0, P.trauma - dt * 1.5);
-  camera.rotation.set(P.pitch, P.yaw, P.roll + P.rollAnim, 'YXZ');
+  camera.rotation.set(
+    P.pitch + CAMFX.pitch + CAMFX.airPitch + shPitch,
+    P.yaw,
+    P.roll + P.rollAnim + CAMFX.roll + shRoll,
+    'YXZ'
+  );
 
   /* 太阳跟随（保证阴影聚焦在玩家周围）
      阴影图按需更新：光照锚点吸附到 1m 网格，只有跨越格子才重绘阴影贴图，

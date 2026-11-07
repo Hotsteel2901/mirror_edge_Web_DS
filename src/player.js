@@ -50,11 +50,14 @@ export function createPlayer(world, hooks) {
     airTime: 0,
     impact: 0,
     stepTimer: 0,
+    stepPhase: 0,      /* 0..1 步幅相位，每次落脚归零 → 摄影机起伏与脚步声同相 */
+    stepKick: 0,       /* 落脚冲击（0..1），供摄影机做短促的下沉 + 侧倾脉冲 */
     foot: 0,
     bobTime: 0,
     bobY: 0,
     bobX: 0,
     landDip: 0,
+    landVel: 0,        /* 落地缓冲弹簧速度 */
     fovKick: 0,
     trauma: 0,
     damageFlash: 0,
@@ -597,6 +600,10 @@ export function createPlayer(world, hooks) {
     P.trauma = 0;
     P.deadTimer = 0;
     P.onBounce = false;
+    P.stepPhase = 0;
+    P.stepKick = 0;
+    P.landDip = 0;
+    P.landVel = 0;
     jumpQueued = false;
     interactTimer = 0;
     stopLoops();
@@ -881,8 +888,12 @@ export function createPlayer(world, hooks) {
         P.trauma = Math.max(P.trauma, clamp(fallDist / 22, 0.2, 0.7));
         P.fovKick = 5;
       }
+      /* 落地即一次落脚：步频重新起拍，缓冲交给弹簧（带一点回弹） */
+      P.stepPhase = 0;
+      P.stepKick = Math.max(P.stepKick, clamp(P.impact / 12, 0, 1));
       if (P.impact > 4) {
-        P.landDip = -Math.min(0.13, P.impact * 0.006);
+        P.landDip = -Math.min(0.11, P.impact * 0.005);
+        P.landVel = -Math.min(1.8, P.impact * 0.09);
         audio.land(P.impact, P.surface);
         hooks.onLand(P.impact, P.surface);
         world.burst(new THREE.Vector3(P.pos.x, P.pos.y + 0.06, P.pos.z), 0xd8dee2, Math.min(24, 7 + P.impact), { life: 0.5, spread: 2.4 + P.impact * 0.08, upBias: 0.5, gravity: 5 });
@@ -917,17 +928,22 @@ export function createPlayer(world, hooks) {
 
     if (!P.grounded && wasGrounded) P.fallStartY = P.pos.y;
 
-    /* 脚步 */
+    /* 脚步（同时也是摄影机的步频时钟：两者共用同一计时器，绝不失步） */
     if (P.grounded && P.moveState !== 'slide' && P.moveState !== 'roll' && P.moveState !== 'dead') {
       const stepSpeed = clamp(hs / 7, 0.35, 1.8);
+      P.stepPhase += dt * stepSpeed / 0.62;
       P.stepTimer -= dt * stepSpeed;
       if (P.stepTimer <= 0) {
         P.stepTimer = 0.62;
+        P.stepPhase = 0;                       /* 落脚：步频相位归零 */
+        P.stepKick = clamp(hs / PHYS.SPRINT_SPEED, 0, 1);
         P.foot ^= 1;
         audio.footstep(P.surface, hs, P.foot);
       }
     } else if (!P.grounded) {
       P.stepTimer = Math.min(P.stepTimer, 0.2);
+      /* 空中不推进步频，落地时从落脚点重新起拍（见落地结算） */
+      P.stepKick = Math.max(0, P.stepKick - dt * 8);
     }
 
     /* 安全点 */
